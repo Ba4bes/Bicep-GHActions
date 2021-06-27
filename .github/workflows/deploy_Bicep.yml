@@ -1,0 +1,59 @@
+
+name: Bicep_deployment
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+env:
+  resourceGroupName: ArmdeploymentTest
+  bicepfilePath: main.bicep
+
+jobs:
+  buildtest:
+    runs-on: ubuntu-latest
+    name: 'Build & Test'
+    steps:
+      - uses: actions/checkout@v2
+      - name: Azure Login
+        uses: Azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true
+      - name: build Bicep file
+        uses: Azure/cli@1.0.4
+        with:
+          inlineScript: |
+            az bicep build --file ${{ env.bicepfilePath }} --outfile ./main.json
+      - name: Upload the ARM template as a Build Artifact
+        uses: actions/upload-artifact@v2.2.4
+        with:
+         path: ./main.json 
+         if-no-files-found: error
+      - name: Test with ARM What-If
+        uses: Azure/powershell@v1
+        with:
+          inlineScript: ./ARM_What-If.ps1 -TestResourceGroupName  ${{ env.resourceGroupName }}
+          azPSVersion: latest
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [buildtest]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Azure Login
+        uses: Azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true
+      - name: Deploy bicep to Azure
+        uses: Azure/cli@1.0.4
+        with:
+          inlineScript: |
+                az deployment group create  \
+                --template-file  ${{ env.bicepfilePath }}  \
+                --resource-group  ${{ env.resourceGroupName }}
